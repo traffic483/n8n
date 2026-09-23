@@ -5,24 +5,29 @@ import { locale as designLocale } from '@n8n/design-system';
 const hot = import.meta.hot;
 const DEFAULT_LOCALE = 'en';
 
+// Eagerly import locale JSONs so this module becomes their owner in every build.
+// This must stay outside the `import.meta.hot` guard below. That guard is dead code
+// in a production build, so the catalogs would be dropped from the bundle and no
+// non-English locale would ever resolve.
+const localeModules = import.meta.glob('@n8n/i18n/locales/*.json', { eager: true }) as Record<
+	string,
+	{ default?: LocaleMessages }
+>;
+const localePaths = Object.keys(localeModules);
+
+const lcOf = (p: string) => p.match(/\/locales\/([^/]+)\.json$/)?.[1] ?? DEFAULT_LOCALE;
+const apply = (lc: string, msgs: LocaleMessages) => updateLocaleMessages(lc, msgs);
+
+// Register every bundled locale, so `N8N_DEFAULT_LOCALE` resolves in production. In dev
+// this also seeds the locales on initial load, so switching locales does not require
+// component-level dynamic imports (avoids hard reload chains).
+for (const p of localePaths) {
+	const lc = lcOf(p);
+	const msgs = (localeModules[p] as { default?: LocaleMessages })?.default;
+	if (msgs && lc) apply(lc, msgs);
+}
+
 if (hot) {
-	// Eagerly import locale JSONs so this module becomes their HMR owner
-	const localeModules = import.meta.glob('@n8n/i18n/locales/*.json', { eager: true }) as Record<
-		string,
-		{ default?: LocaleMessages }
-	>;
-	const localePaths = Object.keys(localeModules);
-
-	const lcOf = (p: string) => p.match(/\/locales\/([^/]+)\.json$/)?.[1] ?? DEFAULT_LOCALE;
-	const apply = (lc: string, msgs: LocaleMessages) => updateLocaleMessages(lc, msgs);
-
-	// Seed all locales on initial load in dev so switching locales
-	// does not require component-level dynamic imports (avoids hard reload chains)
-	for (const p of localePaths) {
-		const lc = lcOf(p);
-		const msgs = (localeModules[p] as { default?: LocaleMessages })?.default;
-		if (msgs && lc) apply(lc, msgs);
-	}
 	const refresh = () => {
 		const current = (i18nInstance.global.locale.value as string) || DEFAULT_LOCALE;
 		i18n.clearCache();
